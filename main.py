@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import argparse
 import glob
 from pathlib import Path
 from typing import Dict, List
 from icecream import ic
+import time
 
 from config import (
     load_members, load_fans, PAIFU_DIR,
@@ -72,15 +74,10 @@ def process_files(player_n, members_map):
 
     return round_data_list, player_data_dict
 
-def main():
-    print("Starting mahjong tournament result aggregation...")
-
-    members = load_members()
-    members_map = create_members_map(members)
-
-    exporter = SheetsExporter()
-
-    all_player_data = {}
+def process_4player_games(exporter, members_map):
+    """四麻の処理"""
+    print("\nCleaning existing 4-player sheets...")
+    exporter.clean_mahjong_sheets(4)
 
     print("\nProcessing 4-player games...")
     round_data_list_4, player_data_dict_4 = process_files(4, members_map)
@@ -91,12 +88,24 @@ def main():
             sheet_name = f"【四麻】第{i}試合"
             print(f"  Exporting {sheet_name}...")
             exporter.export_round_sheet(round_data, sheet_name, 4, player_data_dict_4)
+            time.sleep(20)  # API制限対策
 
+        time.sleep(20)
         if round_data_list_4:
             print("  Exporting total results (4-player)...")
             exporter.export_total_result_sheet(round_data_list_4, player_data_dict_4, 4)
+            time.sleep(20)  # API制限対策
 
-        all_player_data.update(player_data_dict_4)
+            print("  Exporting player data (4-player)...")
+            exporter.export_player_sheet(player_data_dict_4, 4)
+            time.sleep(20)  # API制限対策
+
+    print("\n4-player processing complete!")
+
+def process_3player_games(exporter, members_map):
+    """三麻の処理"""
+    print("\nCleaning existing 3-player sheets...")
+    exporter.clean_mahjong_sheets(3)
 
     print("\nProcessing 3-player games...")
     round_data_list_3, player_data_dict_3 = process_files(3, members_map)
@@ -107,18 +116,94 @@ def main():
             sheet_name = f"【三麻】第{i}試合"
             print(f"  Exporting {sheet_name}...")
             exporter.export_round_sheet(round_data, sheet_name, 3, player_data_dict_3)
+            time.sleep(20)  # API制限対策
 
         if round_data_list_3:
             print("  Exporting total results (3-player)...")
             exporter.export_total_result_sheet(round_data_list_3, player_data_dict_3, 3)
+            time.sleep(20)  # API制限対策
 
-        all_player_data.update(player_data_dict_3)
+            print("  Exporting player data (3-player)...")
+            exporter.export_player_sheet(player_data_dict_3, 3)
+            time.sleep(20)  # API制限対策
 
-    if all_player_data:
-        print("\nExporting player data...")
-        exporter.export_player_sheet(all_player_data)
+    print("\n3-player processing complete!")
 
-    print("\nProcessing complete!")
+def process_summary_only(exporter, members_map):
+    """総合結果のみを処理"""
+    print("\nCleaning existing summary sheets...")
+    # 総合結果シートのみを削除
+    try:
+        worksheets = exporter.spreadsheet.worksheets()
+        patterns_to_delete = ["総合結果"]
+
+        for ws in worksheets:
+            if any(pattern in ws.title for pattern in patterns_to_delete):
+                try:
+                    exporter.spreadsheet.del_worksheet(ws)
+                    print(f"  Deleted sheet: {ws.title}")
+                except Exception as e:
+                    print(f"  Could not delete sheet {ws.title}: {e}")
+                time.sleep(0.5)
+    except Exception as e:
+        print(f"Warning: Could not clean summary sheets: {e}")
+
+    print("\nProcessing summary data only...")
+
+    # 四麻の処理
+    round_data_list_4, player_data_dict_4 = process_files(4, members_map)
+    if round_data_list_4:
+        print(f"4-player: {len(round_data_list_4)} games processed")
+        print("  Exporting total results (4-player)...")
+        exporter.export_total_result_sheet(round_data_list_4, player_data_dict_4, 4)
+        time.sleep(5)
+
+    # 三麻の処理
+    round_data_list_3, player_data_dict_3 = process_files(3, members_map)
+    if round_data_list_3:
+        print(f"3-player: {len(round_data_list_3)} games processed")
+        print("  Exporting total results (3-player)...")
+        exporter.export_total_result_sheet(round_data_list_3, player_data_dict_3, 3)
+        time.sleep(5)
+
+    print("\nSummary processing complete!")
+
+def main():
+    parser = argparse.ArgumentParser(description='麻雀大会結果集計プログラム')
+    parser.add_argument('mode', choices=['4', '3', 'all', 'summary'],
+                       help='処理モード: 4=四麻のみ, 3=三麻のみ, all=両方, summary=総合結果のみ')
+
+    args = parser.parse_args()
+
+    print("Starting mahjong tournament result aggregation...")
+    mode_descriptions = {
+        '4': '四麻のみ',
+        '3': '三麻のみ',
+        'all': '四麻と三麻',
+        'summary': '総合結果のみ'
+    }
+    print(f"Mode: {mode_descriptions.get(args.mode, args.mode)}")
+
+    members = load_members()
+    members_map = create_members_map(members)
+
+    exporter = SheetsExporter()
+
+    if args.mode == '4':
+        process_4player_games(exporter, members_map)
+    elif args.mode == '3':
+        process_3player_games(exporter, members_map)
+    elif args.mode == 'all':
+        # 既存のシートをクリーンアップ
+        print("\nCleaning existing sheets...")
+        exporter.clean_all_sheets()
+
+        process_4player_games(exporter, members_map)
+        process_3player_games(exporter, members_map)
+    elif args.mode == 'summary':
+        process_summary_only(exporter, members_map)
+
+    print("\nAll processing complete!")
 
 if __name__ == "__main__":
     main()

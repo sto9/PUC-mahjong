@@ -2,3 +2,4 @@ credential/*
 test_paifu/*
 paifu/*
 __pycache__/*
+sheet/*
